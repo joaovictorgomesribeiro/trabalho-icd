@@ -1,0 +1,162 @@
+Objetivo: aprofundar o conhecimento da base por meio de análise exploratória, estatísticas descritivas e visualização de dados.
+
+No Check-in #1, o objetivo era entender o que a base contém, o que cada observação representa, como os arquivos se organizam e quais variáveis parecem mais relevantes. Agora, o grupo deverá efetivamente explorar os dados e descobrir como essas variáveis se comportam e se relacionam.
+
+Ainda não é momento de ajustar modelos estatísticos ou de aprendizado de máquina. Nada de regressão, classificação, árvores, clustering, testes de hipóteses etc.
+
+A pergunta central deste check-in é:
+
+O que conseguimos aprender sobre os dados antes de modelá-los?
+
+1. Preparação e qualidade dos dados
+Antes das análises, descreva brevemente os principais tratamentos realizados para tornar os dados analisáveis.
+
+O grupo deverá verificar, quando aplicável:
+
+tipos das variáveis e possíveis erros de importação;
+códigos que representam valores ausentes, ignorados ou não aplicáveis;
+valores ausentes;
+valores impossíveis ou suspeitos;
+duplicações;
+unidades de medida;
+categorias com poucos registros;
+necessidade de combinar arquivos;
+necessidade de criar variáveis derivadas simples;
+uso de pesos amostrais, quando a base possuir desenho amostral.
+Não é obrigatório realizar uma limpeza definitiva da base nesta etapa; porém, já recomendo que o façam. Tenham em mente que o objetivo é demonstrar que o grupo identificou os problemas e tomou decisões conscientes sobre como proceder.
+
+Sempre que uma decisão de tratamento for tomada, explique-a brevemente.
+
+2. Dimensão da base após a preparação
+Informe novamente, agora a partir dos dados efetivamente importados e utilizados:
+
+número de observações;
+número de variáveis;
+quantidade de observações removidas, se houver;
+motivo das principais exclusões;
+número de observações utilizado nas análises apresentadas.
+Se diferentes análises utilizarem subconjuntos distintos, isso deve ficar claro.
+
+O leitor deve conseguir identificar qual é a população de dados representada em cada tabela ou gráfico.
+
+3. Análise descritiva das principais variáveis
+Selecione entre 8 e 10 variáveis relevantes para o trabalho, incluindo obrigatoriamente as cinco variáveis destacadas no Check-in #1.
+
+Para cada variável, apresente uma descrição adequada ao respectivo tipo.
+
+Variáveis numéricas
+Considere, quando fizer sentido:
+
+número de observações válidas;
+valores ausentes;
+média;
+desvio-padrão;
+mediana;
+quartis;
+mínimo e máximo.
+Não é necessário apresentar todas essas medidas automaticamente. Escolha aquelas que realmente ajudam a entender a variável.
+
+Por exemplo, para uma variável fortemente assimétrica, a mediana e os quartis podem ser mais informativos do que apenas média e desvio-padrão.
+
+Variáveis categóricas
+Apresente:
+
+frequências absolutas;
+proporções ou porcentagens;
+categorias mais frequentes;
+categorias raras ou problemáticas, quando houver.
+Evite simplesmente despejar tabelas enormes no relatório. Categorias muito numerosas podem ser resumidas de forma apropriada.
+
+4. Visualização das distribuições
+Construa gráficos que permitam entender como as principais variáveis se distribuem.
+
+Utilize o tipo de gráfico adequado à variável, por exemplo:
+
+histogramas;
+boxplots;
+gráficos de densidade;
+gráficos de barras;
+gráficos de pontos;
+ECDFs, quando forem úteis.
+Os gráficos devem possuir:
+
+título informativo;
+eixos identificados;
+unidades de medida;
+legenda quando necessária;
+categorias compreensíveis para o leitor.
+Evite gráficos produzidos apenas porque uma função do R os gera facilmente. Cada gráfico deve responder a alguma pergunta sobre os dados.
+
+Após cada gráfico ou conjunto de gráficos, escreva algumas frases explicando o que ele mostra.
+
+5. Relações entre variáveis
+O grupo deverá começar a investigar relações entre variáveis que possam ser relevantes para o trabalho.
+
+Apresente pelo menos quatro relações entre duas ou mais variáveis.
+
+Escolha ferramentas adequadas ao tipo das variáveis. Exemplos:
+
+Numérica × numérica
+gráfico de dispersão;
+correlação, quando sua interpretação for apropriada;
+transformação de escala apenas quando houver uma justificativa clara.
+Numérica × categórica
+boxplots;
+violin plots;
+estatísticas descritivas por grupo;
+médias ou medianas por categoria.
+Categórica × categórica
+tabelas de contingência;
+proporções condicionais;
+gráficos de barras agrupadas ou proporcionais.
+O objetivo ainda é apenas descrever, não estabelecer causalidade nem testar hipóteses.
+
+6. Três descobertas interessantes sobre os dados
+Escolha três resultados da análise exploratória que o grupo considere particularmente interessantes.
+
+Para cada descoberta:
+
+formule-a em linguagem clara;
+apresente a evidência correspondente — gráfico, tabela ou medida descritiva;
+explique por que ela pode ser relevante para o restante do trabalho.
+A ideia é começar a transformar uma coleção de variáveis em uma narrativa sobre os dados.
+
+As descobertas podem envolver, por exemplo:
+
+assimetrias fortes;
+diferenças entre grupos;
+concentração em determinadas categorias;
+relações entre duas variáveis;
+presença de valores extremos;
+padrões temporais ou espaciais;
+características inesperadas da base.
+7. Problemas identificados durante a exploração
+Atualize a lista de problemas e limitações encontrada no Check-in #1.
+
+Agora que o grupo realmente explorou os dados, podem surgir questões como:
+
+grande quantidade de valores ausentes;
+categorias muito raras;
+variáveis com pouca variabilidade;
+distribuições extremamente assimétricas;
+valores extremos;
+possíveis erros de registro;
+necessidade de agregação;
+problemas causados pelo desenho amostral;
+inconsistências entre arquivos ou documentação;
+limitações para responder determinadas perguntas.
+Diferencie claramente:
+
+8. O que aprendemos sobre a base?
+Finalize o relatório com uma breve síntese.
+
+Em aproximadamente um ou dois parágrafos, responda:
+
+Quais são as principais características dos dados?
+Quais variáveis parecem particularmente informativas?
+Quais relações merecem ser investigadas posteriormente?
+Quais problemas ou limitações precisarão ser considerados nas próximas etapas?
+O que eu espero deste check-in
+Ao final desta etapa, qualquer integrante do grupo deve conseguir explicar:
+
+como as principais variáveis se distribuem, quais padrões aparecem nos dados, quais relações parecem existir entre elas e quais problemas ou limitações precisam ser considerados antes da modelagem.

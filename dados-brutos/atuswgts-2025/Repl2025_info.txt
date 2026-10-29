@@ -1,0 +1,24 @@
+
+The data file atuswgts_2025.dat (2025 Replicate weights file) contains 161 variables and 6,146 records.  
+The variables on the 2025 atuswgts.dat file are:  TUCASEID, and TUFWGT001...TUFWGT160.  TUCASEID is defined in the ATUS Interview Data Dictionary, 
+available at:  https://www.bls.gov/tus/dictionaries/atusintcodebk25.pdf.  TUFWGT001...TUFWGT160 are replicate weights.  
+
+In addition to the data file, three computer programs are contained in atuswgts-2025.zip. If you have SPSS, SAS, 
+or Stata software, you may use these programs to read the data into your statistical software package.  
+
+The file "atuswgts_2025.sps" reads the data into SPSS; some variable names exceed length 8.
+
+The file "atuswgts_2025.sas" reads the data into SAS.
+
+The file "atuswgts_2025.do" reads the data into Stata.
+
+If you have SAS, SPSS, or Stata software, open the corresponding program, edit the infile (in SAS), 
+file (in SPSS) or import (in Stata) statement to reference the data file on your computer, and run the program.
+
+The ATUS replicate weights are based on the replicate weights developed for the CPS. ATUS begins with the CPS 
+replicate weight after the first-stage ratio adjustment.  Each replicate is processed through all of the stages of 
+the ATUS weighting procedure.  The CPS replicate weights are based on a modified balanced half-sample method of 
+replication, developed in the 1980s by Robert Fay.
+
+For information about the replicate weights, see the publication, Technical Paper 77: 
+Current Population Survey - Design and Methodology, available at: https://www2.census.gov/programs-surveys/cps/methodology/CPS-Tech-Paper-77.pdf. 

@@ -1,0 +1,61 @@
+1. Contexto e cobertura da base
+Explique brevemente:
+
+sobre o que é a base;
+
+quem produziu ou disponibilizou os dados e com qual objetivo;
+
+qual período e região/população os dados cobrem, quando aplicável.
+
+2. Unidade observacional, dimensão e estrutura
+Informe:
+
+o que representa uma linha da base;
+
+número de observações e variáveis;
+
+se há um único arquivo ou várias tabelas/arquivos;
+
+caso existam vários arquivos, como eles se relacionam.
+
+3. Dicionário parcial dos dados
+Escolha as 15 variáveis que o grupo considera mais relevantes e construa um pequeno dicionário contendo:
+
+Variável	O que representa	Tipo	Unidade/categorias	Observação importante
+A descrição deve permitir que alguém que não conhece a base entenda o significado de cada variável. Veja que algumas, senão todas, estas bases já possuem um dicionário.
+
+4. Cinco variáveis de maior interesse
+Entre as 15 anteriores, selecione 5 variáveis que o grupo considera particularmente interessantes para o trabalho.
+
+Para cada uma, explique em uma ou duas frases:
+
+por que ela é interessante;
+
+que papel ela poderia ter em uma futura análise, por exemplo como variável resposta ou preditor.
+
+Novamente, nada de falar em modelos aqui.
+
+5. Problemas e dúvidas encontrados
+Liste objetivamente os principais problemas ou dúvidas identificados até agora, como:
+
+significado de variáveis ou códigos;
+
+valores ausentes ou estranhos;
+
+dificuldades de importação;
+
+necessidade de combinar arquivos;
+
+limitações da base ou da documentação.
+
+6. Fontes consultadas
+Indique as principais fontes usadas para entender os dados: página oficial, documentação, artigo, manual, repositório etc.
+
+---
+
+O que eu espero deste check-in
+Ao final desta etapa, qualquer integrante do grupo deve conseguir explicar:
+
+o que a base contém, o que cada observação representa, quais são suas variáveis mais importantes e quais problemas o grupo já identificou.
+
+Antes de pensar em algoritmo, modelo ou métrica, vocês precisam saber com que dados estão trabalhando.

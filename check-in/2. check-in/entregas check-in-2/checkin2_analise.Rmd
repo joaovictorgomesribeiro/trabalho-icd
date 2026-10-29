@@ -1,0 +1,582 @@
+---
+title: "ICD - Grupo 5: American Time Use Survey (ATUS) 2025 - Check-in #2"
+subtitle: "Análise exploratória, estatísticas descritivas e visualização de dados"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5)
+library(tidyverse)
+library(scales)
+
+base_dir <- "C:/Users/user/Desktop/Trabalho ICD - Prof Matheus/dados-brutos"
+
+wtd_mean <- function(x, w) {
+  ok <- is.finite(x) & is.finite(w)
+  sum(x[ok] * w[ok]) / sum(w[ok])
+}
+
+wtd_quantile <- function(x, w, probs = 0.5) {
+  ok <- is.finite(x) & is.finite(w)
+  x <- x[ok]; w <- w[ok]
+  ord <- order(x)
+  x <- x[ord]; w <- w[ord]
+  cum <- cumsum(w) / sum(w)
+  sapply(probs, function(p) x[which(cum >= p)[1]])
+}
+
+wtd_sd <- function(x, w) {
+  ok <- is.finite(x) & is.finite(w)
+  x <- x[ok]; w <- w[ok]
+  m <- wtd_mean(x, w)
+  sqrt(sum(w * (x - m)^2) / sum(w))
+}
+```
+
+# 1. Preparação e qualidade dos dados
+
+## 1.1 Importação
+
+A base principal é construída a partir de três arquivos brutos do ATUS 2025, todos em
+formato CSV (apesar da extensão `.dat`), ligados pela chave `TUCASEID`:
+
+- **Activity Summary** (`atussum_2025.dat`): 1 linha por respondente, com minutos
+  totais em cada atividade e a maioria das variáveis demográficas/laborais já
+  usadas no Check-in #1.
+- **Respondent** (`atusresp_2025.dat`): 1 linha por respondente; usado aqui só para
+  trazer `TRMJOCGR` (grupo de ocupação), que não está no Activity Summary.
+- **Activity** (`atusact_2025.dat`): várias linhas por respondente (uma por
+  atividade), usado para reconstruir onde cada respondente trabalhou
+  (`TEWHERE`) e assim derivar a variável "trabalhou em casa".
+
+```{r import}
+resp <- read_csv(file.path(base_dir, "atusresp-2025/atusresp_2025.dat"),
+                  col_types = cols(.default = "d", TUCASEID = "c"))
+
+sumfile <- read_csv(file.path(base_dir, "atussum-2025/atussum_2025.dat"),
+                     col_types = cols(.default = "d", TUCASEID = "c"))
+
+act <- read_csv(file.path(base_dir, "atusact-2025/atusact_2025.dat"),
+                 col_types = cols(.default = "d", TUCASEID = "c"))
+
+cat("Linhas em atussum (1 por respondente):", nrow(sumfile), "\n")
+cat("Linhas em atusresp (1 por respondente):", nrow(resp), "\n")
+cat("Linhas em atusact (1 por atividade):", nrow(act), "\n")
+cat("Duplicatas de TUCASEID em atussum:", sum(duplicated(sumfile$TUCASEID)), "\n")
+```
+
+Não há duplicatas de `TUCASEID` nos arquivos de 1 linha por respondente, como
+esperado pelo desenho da pesquisa.
+
+## 1.2 Variáveis derivadas
+
+**Minutos de lazer e esportes.** Somamos todas as colunas de atividade que
+começam com `t12` (socializar, relaxar e lazer) ou `t13` (esportes, exercício e
+recreação) no Activity Summary.
+
+```{r derive-leisure}
+leisure_cols <- grep("^t1[23]\\d{4}$", names(sumfile), value = TRUE)
+length(leisure_cols)
+
+sumfile <- sumfile %>%
+  mutate(lazer_min = rowSums(across(all_of(leisure_cols)), na.rm = TRUE))
+
+summary(sumfile$lazer_min)
+```
+
+**Trabalhou em casa.** No arquivo de atividades, filtramos as atividades de
+trabalho (`TUTIER1CODE == 5 & TUTIER2CODE == 1`, isto é, código de 6 dígitos
+0501xx = "Working") e verificamos se, para algum registro dessas atividades, o
+local (`TEWHERE`) foi 1 ("Respondent's home or yard"). `TEWHERE` não é
+coletado para algumas atividades e usa -1 nesses casos; tratamos -1 como
+"não informado", não como "não trabalhou em casa".
+
+```{r derive-wfh}
+work_home_flag <- act %>%
+  filter(TUTIER1CODE == 5, TUTIER2CODE == 1) %>%
+  group_by(TUCASEID) %>%
+  summarise(
+    minutos_trabalho = sum(TUACTDUR, na.rm = TRUE),
+    trabalhou_em_casa = as.integer(any(TEWHERE == 1)),
+    .groups = "drop"
+  )
+
+nrow(work_home_flag)
+```
+
+## 1.3 Junção das bases
+
+```{r join}
+base <- sumfile %>%
+  left_join(resp %>% select(TUCASEID, TRMJOCGR), by = "TUCASEID") %>%
+  left_join(work_home_flag %>% select(TUCASEID, trabalhou_em_casa, minutos_trabalho),
+            by = "TUCASEID")
+
+nrow(base)
+```
+
+Respondentes sem nenhuma atividade de trabalho no `atusact` (não empregados,
+ou empregados que não trabalharam no dia do diário) ficam com
+`trabalhou_em_casa = NA`. Isso é esperado e será tratado como um subconjunto
+diferente (população = empregados que trabalharam no dia do diário), não como
+dado ausente a ser imputado.
+
+## 1.4 Tratamento de códigos de ausente / não aplicável
+
+Seguindo o dicionário de dados (ATUS usa -1 = blank/não aplicável, -2 = don't
+know, -3 = refused, e -4 = "horas variam" em algumas variáveis de horas):
+
+```{r clean}
+base <- base %>%
+  mutate(
+    # TRDPFTPT: -1 marca quem não está empregado -> não é faltante, é categoria própria
+    TRDPFTPT_lab = case_when(
+      TRDPFTPT == 1 ~ "Integral",
+      TRDPFTPT == 2 ~ "Parcial",
+      TRDPFTPT == -1 ~ "Não empregado",
+      TRUE ~ NA_character_
+    ),
+    # TEHRUSLT: -4 = horas variam, -1 = não aplica -> tratados como categorias, não removidos
+    TEHRUSLT_clean = ifelse(TEHRUSLT %in% c(-1, -4), NA_real_, TEHRUSLT),
+    horas_variam = TEHRUSLT == -4,
+    # TRERNWA: só definido para empregados assalariados; -1 = não aplicável
+    TRERNWA_clean = ifelse(TRERNWA == -1, NA_real_, TRERNWA / 100),  # 2 casas decimais implícitas -> US$
+    # TRMJOCGR: -1 = não aplica (não empregado)
+    TRMJOCGR_lab = case_when(
+      TRMJOCGR == 1 ~ "Gerência/profissional",
+      TRMJOCGR == 2 ~ "Serviços",
+      TRMJOCGR == 3 ~ "Vendas/escritório",
+      TRMJOCGR == 4 ~ "Agropecuária/pesca/silvicultura",
+      TRMJOCGR == 5 ~ "Construção/manutenção",
+      TRMJOCGR == 6 ~ "Produção/transporte",
+      TRUE ~ NA_character_
+    ),
+    TESEX_lab = ifelse(TESEX == 1, "Masculino", "Feminino"),
+    TUDIARYDAY_lab = factor(TUDIARYDAY,
+      levels = 1:7,
+      labels = c("Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado")
+    ),
+    fim_de_semana = TUDIARYDAY %in% c(1, 7),
+    TELFS_lab = case_when(
+      TELFS == 1 ~ "Empregado trabalhando",
+      TELFS == 2 ~ "Empregado afastado",
+      TELFS == 3 ~ "Desempregado (layoff)",
+      TELFS == 4 ~ "Desempregado (procurando)",
+      TELFS == 5 ~ "Fora da força de trabalho",
+      TRUE ~ NA_character_
+    ),
+    trabalhou_em_casa_lab = case_when(
+      trabalhou_em_casa == 1 ~ "Sim",
+      trabalhou_em_casa == 0 ~ "Não",
+      TRUE ~ NA_character_
+    ),
+    # PEEDUCA: agrupamento em faixas (códigos no dicionário CPS 31-46)
+    escolaridade = case_when(
+      PEEDUCA <= 38 ~ "Menos que ensino médio",
+      PEEDUCA == 39 ~ "Ensino médio completo",
+      PEEDUCA %in% c(40, 41, 42) ~ "Superior incompleto/técnico",
+      PEEDUCA == 43 ~ "Bacharelado",
+      PEEDUCA %in% c(44, 45, 46) ~ "Pós-graduação",
+      TRUE ~ NA_character_
+    ),
+    escolaridade = factor(escolaridade, levels = c(
+      "Menos que ensino médio", "Ensino médio completo",
+      "Superior incompleto/técnico", "Bacharelado", "Pós-graduação"
+    )),
+    TEAGE_clean = ifelse(TEAGE < 0, NA_real_, TEAGE)
+  )
+```
+
+**Decisões de tratamento (resumo):**
+
+- Códigos −1/−2/−3/−4 nunca foram tratados como "zero": viraram `NA` quando
+  representam dado realmente ausente para a análise em questão, ou uma
+  categoria própria ("Não empregado", "horas variam") quando descrevem uma
+  condição válida do respondente.
+- `TRERNWA` (rendimento semanal) só é interpretável para empregados
+  assalariados (TELFS 1-2 e tipo de vínculo 1-5); por isso análises com essa
+  variável usam explicitamente o subconjunto de quem tem valor não-ausente.
+- Não removemos nenhuma observação da base principal (6.146 respondentes):
+  os "ausentes" ficam como `NA` e cada tabela/gráfico declara a população que
+  está de fato usando.
+- Peso amostral `TUFINLWGT` foi mantido e usado nas estatísticas descritivas
+  ponderadas (médias, medianas, proporções), já que a ATUS sobreamostra fins
+  de semana e tem desenho amostral complexo.
+- Nenhuma duplicata encontrada; nenhuma unidade de medida precisou de
+  conversão além de minutos (já padronizados pelo próprio arquivo) e centavos
+  -> dólares em `TRERNWA`.
+
+# 2. Dimensão da base após a preparação
+
+```{r dim}
+cat("Observações (respondentes) na base principal:", nrow(base), "\n")
+cat("Variáveis selecionadas para a análise:",
+    length(c("lazer_min","trabalhou_em_casa","TUDIARYDAY","TRCHILDNUM","TRMJOCGR",
+              "TEAGE","TESEX","escolaridade","TELFS","TRERNWA")), "\n")
+
+cat("\nSubconjuntos usados por análise:\n")
+cat("- Todos os respondentes (lazer, dia da semana, filhos):", nrow(base), "\n")
+cat("- Com atividade de trabalho registrada no diário (trabalhou_em_casa não-NA):",
+    sum(!is.na(base$trabalhou_em_casa)), "\n")
+cat("- Empregados assalariados com TRERNWA válido:",
+    sum(!is.na(base$TRERNWA_clean)), "\n")
+cat("- Com TRMJOCGR definido (empregados):", sum(!is.na(base$TRMJOCGR_lab)), "\n")
+```
+
+Nenhuma observação foi excluída da base de 6.146 respondentes; o que varia de
+análise para análise é quantas observações têm valor válido (não-`NA`) na(s)
+variável(is) envolvida(s), e isso é reportado em cada tabela/gráfico abaixo.
+
+# 3. Análise descritiva das principais variáveis
+
+10 variáveis selecionadas, incluindo as 5 obrigatórias do Check-in #1
+(`lazer_min`, `trabalhou_em_casa`, `TUDIARYDAY`, `TRCHILDNUM`, `TRMJOCGR`) +
+`TEAGE`, `TESEX`, `escolaridade` (PEEDUCA agrupado), `TELFS`, `TRERNWA`.
+
+## 3.1 Variáveis numéricas
+
+```{r desc-num}
+num_vars <- list(
+  "Minutos de lazer/esportes (lazer_min)" = base$lazer_min,
+  "Idade (TEAGE)" = base$TEAGE_clean,
+  "Número de crianças no domicílio (TRCHILDNUM)" = base$TRCHILDNUM,
+  "Rendimento semanal, US$ (TRERNWA, só assalariados)" = base$TRERNWA_clean
+)
+
+desc_num <- map_dfr(names(num_vars), function(nm) {
+  x <- num_vars[[nm]]
+  w <- base$TUFINLWGT
+  tibble(
+    variavel = nm,
+    n_validos = sum(!is.na(x)),
+    n_ausentes = sum(is.na(x)),
+    media_pond = wtd_mean(x, w),
+    mediana_pond = wtd_quantile(x, w, 0.5),
+    q1_pond = wtd_quantile(x, w, 0.25),
+    q3_pond = wtd_quantile(x, w, 0.75),
+    minimo = min(x, na.rm = TRUE),
+    maximo = max(x, na.rm = TRUE)
+  )
+})
+
+desc_num %>% mutate(across(where(is.numeric), ~round(., 1)))
+```
+
+`lazer_min` e `TEAGE` têm distribuição razoavelmente simétrica, por isso
+média e desvio-padrão são informativos. `TRCHILDNUM` e `TRERNWA` são
+fortemente assimétricos (muitos zeros / cauda longa à direita), então
+mediana e quartis descrevem melhor essas variáveis do que a média sozinha.
+
+## 3.2 Variáveis categóricas
+
+```{r desc-cat}
+cat_summary <- function(data, var, label) {
+  data %>%
+    filter(!is.na(.data[[var]])) %>%
+    count(.data[[var]], wt = TUFINLWGT, name = "peso") %>%
+    mutate(proporcao = peso / sum(peso),
+           variavel = label) %>%
+    rename(categoria = 1) %>%
+    arrange(desc(proporcao))
+}
+
+bind_rows(
+  cat_summary(base, "TESEX_lab", "Sexo"),
+  cat_summary(base, "TUDIARYDAY_lab", "Dia da semana do diário"),
+  cat_summary(base, "escolaridade", "Escolaridade (agrupada)"),
+  cat_summary(base, "TELFS_lab", "Situação na força de trabalho"),
+  cat_summary(base, "TRMJOCGR_lab", "Grupo de ocupação (só empregados)"),
+  cat_summary(base, "trabalhou_em_casa_lab", "Trabalhou em casa no dia (só c/ atividade de trabalho)")
+) %>%
+  select(variavel, categoria, peso, proporcao) %>%
+  mutate(proporcao = percent(proporcao, accuracy = 0.1))
+```
+
+Categorias raras: dentro de `TRMJOCGR`, "Agropecuária/pesca/silvicultura" é a
+menos frequente (poucas dezenas de casos na amostra, bem abaixo de 5% dos
+empregados); isso já era esperado pelo Check-in #1 e deve ser lembrado ao
+interpretar análises cruzadas com essa categoria.
+
+# 4. Visualização das distribuições
+
+## 4.1 Minutos de lazer (histograma)
+
+```{r plot-lazer-hist}
+ggplot(base, aes(x = lazer_min, weight = TUFINLWGT)) +
+  geom_histogram(binwidth = 30, fill = "#2c7fb8", color = "white") +
+  scale_y_continuous(labels = label_comma()) +
+  labs(
+    title = "Distribuição dos minutos diários de lazer e esportes",
+    subtitle = "ATUS 2025, respondentes 15+ anos (n = 6.146), ponderado por TUFINLWGT",
+    x = "Minutos de lazer e esportes no dia do diário",
+    y = "População estimada (pessoa-dias)"
+  ) +
+  theme_minimal()
+```
+
+A distribuição é concentrada entre 100 e 500 minutos/dia, com cauda direita
+longa (poucos respondentes passam a maior parte do dia em lazer) e um pico
+discreto perto de zero (dias sem nenhum lazer registrado).
+
+## 4.2 Idade (densidade)
+
+```{r plot-age-density}
+ggplot(base, aes(x = TEAGE_clean, weight = TUFINLWGT)) +
+  geom_density(fill = "#41b6c4", alpha = 0.6) +
+  labs(
+    title = "Densidade da idade dos respondentes",
+    subtitle = "Topcode em 85 anos (ver nota do dicionário de dados)",
+    x = "Idade (anos)",
+    y = "Densidade"
+  ) +
+  theme_minimal()
+```
+
+## 4.3 Escolaridade (barras)
+
+```{r plot-educ-bar}
+base %>%
+  filter(!is.na(escolaridade)) %>%
+  count(escolaridade, wt = TUFINLWGT) %>%
+  ggplot(aes(x = fct_reorder(escolaridade, n), y = n / 1e6)) +
+  geom_col(fill = "#225ea8") +
+  coord_flip() +
+  labs(
+    title = "Escolaridade dos respondentes (agrupada)",
+    subtitle = "Ponderado por TUFINLWGT",
+    x = NULL,
+    y = "População estimada (milhões de pessoas-dias)"
+  ) +
+  theme_minimal()
+```
+
+## 4.4 Minutos de lazer por situação de trabalho em casa (boxplot)
+
+```{r plot-box-wfh}
+base %>%
+  filter(!is.na(trabalhou_em_casa_lab)) %>%
+  ggplot(aes(x = trabalhou_em_casa_lab, y = lazer_min)) +
+  geom_boxplot(fill = "#a1dab4") +
+  labs(
+    title = "Minutos de lazer por situação de trabalho em casa",
+    subtitle = "Apenas respondentes com atividade de trabalho registrada no diário",
+    x = "Trabalhou em casa no dia?",
+    y = "Minutos de lazer e esportes"
+  ) +
+  theme_minimal()
+```
+
+## 4.5 ECDF do rendimento semanal (só assalariados)
+
+```{r plot-ecdf-earn}
+base %>%
+  filter(!is.na(TRERNWA_clean)) %>%
+  ggplot(aes(x = TRERNWA_clean)) +
+  stat_ecdf(color = "#253494", linewidth = 1) +
+  scale_x_continuous(labels = label_dollar(prefix = "US$ "), limits = c(0, 3000)) +
+  labs(
+    title = "Função de distribuição acumulada (ECDF) do rendimento semanal",
+    subtitle = "Apenas empregados assalariados; eixo truncado em US$ 3.000 para legibilidade",
+    x = "Rendimento semanal no emprego principal",
+    y = "Proporção acumulada"
+  ) +
+  theme_minimal()
+```
+
+A ECDF mostra que a mediana de rendimento semanal fica perto de US$
+1.000–1.200, e que cerca de 90% dos assalariados ganham menos de US$ 2.500/semana,
+confirmando a assimetria à direita já identificada na tabela da seção 3.1.
+
+# 5. Relações entre variáveis
+
+## 5.1 Numérica × Numérica: idade vs. minutos de lazer
+
+```{r rel-num-num}
+cor_val <- cor(base$TEAGE_clean, base$lazer_min, use = "complete.obs")
+
+base %>%
+  slice_sample(n = 1500) %>%
+  ggplot(aes(x = TEAGE_clean, y = lazer_min)) +
+  geom_point(alpha = 0.25, color = "#2c7fb8") +
+  geom_smooth(method = "loess", color = "#e34a33", se = FALSE) +
+  labs(
+    title = "Idade vs. minutos de lazer",
+    subtitle = paste0("Amostra de 1.500 pontos para legibilidade. Correlação de Pearson: ", round(cor_val, 2)),
+    x = "Idade (anos)",
+    y = "Minutos de lazer e esportes"
+  ) +
+  theme_minimal()
+```
+
+Correlação fraca e positiva: respondentes mais velhos tendem a ter um pouco
+mais de tempo de lazer, provavelmente refletindo menor participação na força
+de trabalho entre os mais idosos.
+
+## 5.2 Numérica × Categórica: lazer por dia da semana
+
+```{r rel-num-cat-day}
+base %>%
+  group_by(TUDIARYDAY_lab, fim_de_semana) %>%
+  summarise(lazer_mediano = wtd_quantile(lazer_min, TUFINLWGT, 0.5), .groups = "drop") %>%
+  ggplot(aes(x = TUDIARYDAY_lab, y = lazer_mediano, fill = fim_de_semana)) +
+  geom_col() +
+  scale_fill_manual(values = c("TRUE" = "#e34a33", "FALSE" = "#2c7fb8"),
+                     labels = c("Dia útil", "Fim de semana"), name = NULL) +
+  labs(
+    title = "Mediana de minutos de lazer por dia da semana",
+    x = NULL, y = "Mediana de minutos de lazer"
+  ) +
+  theme_minimal()
+```
+
+Fins de semana (sobreamostrados no desenho da ATUS) têm mediana de lazer
+visivelmente maior que dias úteis, confirmando a hipótese do Check-in #1 de
+que `TUDIARYDAY` é um preditor relevante do tempo de lazer.
+
+## 5.3 Numérica × Categórica: rendimento semanal por grupo de ocupação
+
+```{r rel-num-cat-occ}
+base %>%
+  filter(!is.na(TRMJOCGR_lab), !is.na(TRERNWA_clean)) %>%
+  ggplot(aes(x = fct_reorder(TRMJOCGR_lab, TRERNWA_clean, median), y = TRERNWA_clean)) +
+  geom_boxplot(fill = "#a1dab4", outlier.alpha = 0.2) +
+  coord_flip() +
+  scale_y_continuous(labels = label_dollar(prefix = "US$ "), limits = c(0, 3000)) +
+  labs(
+    title = "Rendimento semanal por grupo de ocupação",
+    subtitle = "Apenas empregados assalariados; eixo truncado em US$ 3.000",
+    x = NULL, y = "Rendimento semanal no emprego principal"
+  ) +
+  theme_minimal()
+```
+
+## 5.4 Categórica × Categórica: trabalhou em casa × grupo de ocupação
+
+```{r rel-cat-cat}
+tab_wfh_occ <- base %>%
+  filter(!is.na(trabalhou_em_casa_lab), !is.na(TRMJOCGR_lab)) %>%
+  count(TRMJOCGR_lab, trabalhou_em_casa_lab, wt = TUFINLWGT) %>%
+  group_by(TRMJOCGR_lab) %>%
+  mutate(proporcao = n / sum(n)) %>%
+  ungroup()
+
+tab_wfh_occ %>%
+  select(TRMJOCGR_lab, trabalhou_em_casa_lab, proporcao) %>%
+  pivot_wider(names_from = trabalhou_em_casa_lab, values_from = proporcao) %>%
+  mutate(across(where(is.numeric), ~percent(., accuracy = 0.1)))
+
+ggplot(tab_wfh_occ, aes(x = fct_reorder(TRMJOCGR_lab, proporcao * (trabalhou_em_casa_lab == "Sim")),
+                         y = proporcao, fill = trabalhou_em_casa_lab)) +
+  geom_col(position = "fill") +
+  coord_flip() +
+  scale_y_continuous(labels = percent) +
+  scale_fill_manual(values = c("Sim" = "#e34a33", "Não" = "#2c7fb8"), name = "Trabalhou em casa?") +
+  labs(
+    title = "Proporção que trabalhou em casa, por grupo de ocupação",
+    subtitle = "Apenas respondentes com atividade de trabalho registrada no diário",
+    x = NULL, y = "Proporção"
+  ) +
+  theme_minimal()
+```
+
+## 5.5 Categórica × Categórica: número de filhos × trabalhou em casa
+
+```{r rel-cat-cat-children}
+base %>%
+  filter(!is.na(trabalhou_em_casa_lab)) %>%
+  mutate(tem_filhos = ifelse(TRCHILDNUM > 0, "Tem filhos < 18", "Sem filhos < 18")) %>%
+  count(tem_filhos, trabalhou_em_casa_lab, wt = TUFINLWGT) %>%
+  group_by(tem_filhos) %>%
+  mutate(proporcao = n / sum(n)) %>%
+  ungroup() %>%
+  select(tem_filhos, trabalhou_em_casa_lab, proporcao) %>%
+  pivot_wider(names_from = trabalhou_em_casa_lab, values_from = proporcao) %>%
+  mutate(across(where(is.numeric), ~percent(., accuracy = 0.1)))
+```
+
+# 6. Três descobertas interessantes sobre os dados
+
+**1. O tempo de lazer é fortemente ditado pelo dia da semana, não só pela
+idade ou ocupação.** A mediana de lazer em fins de semana é visivelmente
+maior que em dias úteis (seção 5.2), reforçando que qualquer modelo futuro
+precisará controlar por `TUDIARYDAY` — e lembrar que a ATUS sobreamostra
+fins de semana, então estimativas não ponderadas superestimariam o lazer
+médio da população.
+
+**2. "Trabalhar em casa" está concentrado em poucas ocupações.** A proporção
+de quem trabalhou em casa no dia do diário varia muito entre grupos de
+ocupação (seção 5.4): é alta em "Gerência/profissional" e praticamente nula
+em ocupações como "Construção/manutenção" e "Produção/transporte", como
+esperado pela natureza do trabalho. Isso confirma `TRMJOCGR` como o preditor
+mais relevante para a variável resposta categórica do trabalho.
+
+**3. O rendimento semanal é extremamente assimétrico e por isso a média
+isoladamente é enganosa.** A ECDF (seção 4.5) e o boxplot por ocupação
+(seção 5.3) mostram cauda longa à direita com poucos valores muito altos
+(reforçada pelo topcoding documentado no dicionário, que afeta os ~3% mais
+altos por mês); para esta variável, mediana e quartis — não média e
+desvio-padrão — são as medidas adequadas, e isso deve valer também para
+qualquer modelagem futura (ex.: transformação log).
+
+# 7. Problemas identificados durante a exploração
+
+Atualização da lista do Check-in #1, agora com base na exploração efetiva:
+
+**Confirmados do Check-in #1:**
+
+- Lacuna de outubro/2025 (paralisação do governo) — não há diários desse mês;
+  pesos foram reajustados pelo BLS, mas a composição sazonal do 4º trimestre
+  fica mais sensível a novembro/dezembro.
+- Sobreamostragem de fins de semana em `TUDIARYDAY` — confirmada
+  empiricamente na seção 5.2; toda estatística não ponderada seria viesada.
+- Teto (topcode) em `TEAGE` (80-84 → 80; 85+ → 85) e em `TRERNWA` (~3% mais
+  altos por mês) — confirmado nos dicionários de dados.
+
+**Novos, identificados na exploração deste check-in:**
+
+- **Categoria rara em `TRMJOCGR`**: "Agropecuária/pesca/silvicultura" tem poucas
+  dezenas de casos ponderados; qualquer comparação envolvendo esse grupo terá
+  intervalo de confiança muito largo.
+- **Forte assimetria em `TRCHILDNUM` e `TRERNWA`**: a maioria dos respondentes
+  tem 0 filhos e distribuições de renda com cauda longa — médias simples
+  distorcem a leitura; medidas de posição (mediana/quartis) são mais
+  informativas.
+- **Subpopulações distintas por desenho**: `trabalhou_em_casa` só é definida
+  para quem registrou pelo menos uma atividade de trabalho no diário (não
+  para toda a amostra), e `TRERNWA`/`TRMJOCGR` só valem para empregados. Isso
+  exige sempre declarar explicitamente a população de cada tabela/gráfico —
+  o que já foi feito ao longo deste relatório.
+- **Possível erro de registro/limitação do dado**: a variável `trabalhou_em_casa`
+  é construída a partir de uma única diária (um dia por pessoa), então ela
+  capta apenas se a pessoa trabalhou em casa *naquele dia específico*, não seu
+  padrão habitual de trabalho remoto — uma limitação importante para
+  interpretar os 35% citados no Check-in #1.
+- **Inconsistência de granularidade entre arquivos**: `atusact` tem ~114 mil
+  linhas de atividades para 6.146 pessoas (média de ~18-19 atividades por
+  dia), confirmando que a agregação por pessoa é indispensável antes de
+  qualquer junção com o Activity Summary.
+
+# 8. O que aprendemos sobre a base?
+
+A ATUS 2025 mostra uma amostra de 6.146 respondentes com variáveis de uso do
+tempo fortemente assimétricas (lazer, rendimento, número de filhos) e com um
+desenho amostral que sobreamostra fins de semana — qualquer leitura
+descritiva precisa usar os pesos (`TUFINLWGT`) para não distorcer a imagem da
+população. As variáveis mais informativas para o restante do trabalho são
+`TUDIARYDAY` (dia útil vs. fim de semana explica boa parte da variação no
+lazer) e `TRMJOCGR` (grupo de ocupação é o principal diferenciador de quem
+trabalha em casa e de quanto ganha). As relações que merecem investigação
+mais aprofundada nas próximas etapas são: o efeito conjunto de ocupação e
+presença de filhos sobre o tempo de lazer, e se o padrão de trabalho em casa
+observado num único dia reflete um hábito estável do respondente. Entre as
+limitações a considerar antes de modelar, destacam-se a assimetria das
+variáveis de renda e de filhos (que pode exigir transformação ou uso de
+estatísticas robustas), o pequeno número de casos em algumas categorias de
+ocupação, e o fato de a variável "trabalho em casa" captar apenas um dia —
+não um padrão — de cada respondente.
